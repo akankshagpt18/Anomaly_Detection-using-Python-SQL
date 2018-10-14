@@ -1,0 +1,95 @@
+---
+title: "Satellite_data"
+author: "Aku"
+date: "9/27/2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+#Importing Dataset
+dataset = read.csv("/Users/Asad/Downloads/allOutput.csv")
+
+
+#Splitting into train and test
+n = nrow(dataset)
+trainIndex = sample(1:n, size = round(0.7*n), replace=FALSE)
+train = dataset[trainIndex ,]
+test = dataset[-trainIndex ,]
+
+```
+
+```{r}
+#Taking random sample from train set
+mysample <- dataset[sample(1:nrow(dataset), 5000,
+  	replace=FALSE),]
+```
+
+```{r}
+# How many Unique Sats per constellation
+summary(dataset$constellation)
+```
+
+```{r}
+# List of Unique Sats.
+unique(dataset$constellation)
+```
+
+```{r}
+# Scatterplot for agc and svid. No pattern
+plot(mysample$agc, mysample$svid, main = "Scatterplot", xlab = "agc", ylab = "avid", pch = 19)
+```
+
+```{r}
+# Scatterplot for cn0 and svid. No pattern
+plot(mysample$cn0, mysample$svid, main = "Scatterplot", xlab = "cn0", ylab = "avid")
+```
+
+
+
+```{r}
+# Scatterplot for elevation_degree and svid. No pattern
+plot(mysample$elevation_deg, mysample$svid, main = "Scatterplot", xlab = "elevation_degree", ylab = "avid")
+```
+
+
+```{r}
+# Patterns within your unique constellation of agc, cn0, and elevation_degree
+#agc. Data is little skewed for Galileo(left), Glonass(right) and GPS(left) with some outliers.
+library(ggplot2)
+ggplot(mysample, aes(x=constellation, y=agc)) +
+  geom_boxplot()
+```
+
+```{r}
+#cn0.  Beidou is right skewed rest are normally distributed.
+ggplot(mysample, aes(x=constellation, y=cn0)) +
+  geom_boxplot()
+```
+
+```{r}
+#elevation_degree. Data is normally distributed except for Beidou (little right skewed) and Galileo has some outliers.
+ggplot(mysample, aes(x=constellation, y=cn0)) +
+  geom_boxplot()
+```
+
+
+```{r}
+# Non-linear relationship among all the data. There seem to no pattern in the dataset.
+library(RColorBrewer)
+plot(mysample,col=brewer.pal(3,"Set1"))
+```
+
+```{r}
+# agc, cn0 and elevation_deg have very low correlation. So there seem to have no multi-collinearity among the continuos variables i.e. cn0, agc and elevation_degree.
+cor(mysample$cn0, mysample$agc)
+cor(mysample$cn0, mysample$elevation_deg)
+cor(mysample$agc, mysample$elevation_deg)
+
+
+```
+
