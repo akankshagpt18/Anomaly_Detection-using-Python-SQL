@@ -1,0 +1,17 @@
+def outlier_func(df):
+    result =  df.groupby(word).size().reset_index(name = 'count').sort_values(['count']) #agg table by load_date
+    model = IsolationForest(n_estimators=50, max_samples='auto', contamination=(0.1), max_features=1.0)  #Applying Isolation Forest
+    model.fit(result[['count']])
+    result['scores'] = model.decision_function(result[['count']])
+    result['anomaly'] = model.predict(result[['count']])
+    anomaly = result.loc[result['anomaly'] == -1]
+    anomaly_index = list(anomaly.index)
+    print(f'{table_name} has anomaly \n\n{anomaly.iloc[:, :2]}')
+        
+
+
+table_name = 'vsms' # input tablename from user
+df =  pd.read_csv('C:\path\data.csv')
+for word in df:
+    if re.search('LOAD.+', word): #searching for load_date column in the tablename
+        outlier_func(df)
