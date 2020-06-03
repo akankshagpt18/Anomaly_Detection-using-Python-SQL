@@ -10,7 +10,7 @@ def outlier_func(df):
         
 
 
-table_name = 'vsms' # input tablename from user
+table_name = 'table1' # input tablename from user
 df =  pd.read_csv('C:\path\data.csv')
 for word in df:
     if re.search('LOAD.+', word): #searching for load_date column in the tablename
