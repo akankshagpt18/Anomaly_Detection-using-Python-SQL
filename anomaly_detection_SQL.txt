@@ -1,0 +1,164 @@
+--STDDEV on count of transaction, sale_amount(pos_retail), returned_amt(neg_retail) for each day in a store
+With temp AS(Select t.*, 
+round(avg(cnt) OVER (PARTITION BY t.store_id), 3) avg_cnt,
+round(3*stddev(cnt) OVER (PARTITION BY t.store_id), 3) std_cnt,
+round(avg(pos_retail) OVER (PARTITION BY store_id), 3) avg_pos_rtl,
+round(3*stddev(pos_retail) OVER (PARTITION BY store_id), 3) std_pos_rtl,
+round(avg(neg_retail) OVER (PARTITION BY t.store_id), 3) avg_neg_rtl,
+round(3*stddev(neg_retail) OVER (PARTITION BY t.store_id), 3) std_neg_rtl,
+
+from 
+(
+SELECT trans_dt, store_id,
+COUNT(trans_id) cnt,
+SUM(CASE WHEN retail_amt>0 THEN retail_amt END) pos_retail,
+SUM(CASE WHEN retail_amt<0 THEN retail_amt END) neg_retail
+FROM table1
+LEFT OUTER JOIN table2 ON store_id = store 
+WHERE trans_dt > TRUNC(sysdate) - 28
+AND store_id BETWEEN 4550 AND 4600
+GROUP BY trans_dt, store_id, 
+)t)
+
+Select 
+trans_dt,
+store_id,
+cnt,
+std_cnt+avg_cnt ,avg_cnt-std_cnt,
+CASE WHEN cnt NOT BETWEEN avg_cnt-std_cnt AND std_cnt+avg_cnt THEN 'Outlier'  
+     WHEN pos_retail NOT BETWEEN avg_pos_rtl-std_pos_rtl AND avg_pos_rtl+std_pos_rtl  THEN 'Outlier'
+     WHEN neg_retail NOT BETWEEN avg_neg_rtl-std_neg_rtl AND std_neg_rtl+avg_neg_rtl THEN 'Outlier'
+     ELSE 'Not Outlier' END reslt
+from temp
+order by 2, 1;
+
+
+
+
+--MAD on count of transaction for each day in a store
+
+with temp AS (SELECT trans_dt, store_id, , COUNT(trans_id) cnt,
+median(count(trans_id)) OVER (PARTITION BY store_id) media,
+ABS(count(trans_id) - median(count(trans_id)) OVER (PARTITION BY store_id)) deviation
+FROM table1
+LEFT OUTER JOIN table2 ON store_id = store 
+WHERE trans_dt > trunc(sysdate)-28
+AND store_id BETWEEN 4550 AND 4600
+GROUP BY trans_dt, store_id, )
+
+,temp2 AS(Select temp.trans_dt, temp.store_id, temp., temp.cnt,
+1.4826 * median(deviation) OVER (PARTITION BY temp.store_id) MAD,
+round(deviation/ median(deviation) OVER (PARTITION BY temp.store_id), 2) abs_dev
+from temp)
+
+Select temp.*, media- 3*MAD LC, media + 3*MAD UC, 
+CASE WHEN temp.cnt BETWEEN media- 3*MAD AND media + 3*MAD THEN 'NOT Outlier' else 'Outlier' END reslt
+from temp
+LEFT JOIN temp2 ON temp.store_id = temp2.store_id AND temp.trans_dt = temp2.trans_dt
+order by 2,1;
+
+
+
+
+--Double MAD on count of transaction for each day in a store
+
+
+with temp AS(SELECT trans_dt, store_id, , COUNT(trans_id) cnt,
+median(count(trans_id)) OVER (PARTITION BY store_id) medn,
+CASE WHEN count(trans_id) <= (median(count(trans_id)) OVER (PARTITION BY store_id)) THEN ABS(count(trans_id) - median(count(trans_id)) OVER (PARTITION BY store_id)) END lowr_dev,
+CASE WHEN count(trans_id) >= (median(count(trans_id)) OVER (PARTITION BY store_id)) THEN ABS(count(trans_id) - median(count(trans_id)) OVER (PARTITION BY store_id)) END upr_dev
+FROM table1
+LEFT OUTER JOIN table2 ON store_id = store 
+WHERE trans_dt > trunc(sysdate)-14
+AND store_id BETWEEN 4550 AND 4600
+GROUP BY trans_dt, store_id,  order by 2,1)
+
+,temp2 AS(SELECT distinct temp.trans_dt, temp.store_id, temp., temp.cnt, medn,
+1.4826* median(lowr_dev) OVER (PARTITION BY store_id) lr_mad, 1.4826* median(upr_dev) OVER (PARTITION BY store_id) ur_mad
+from temp)
+
+select temp2.trans_dt, temp2.store_id, temp2., temp2.cnt, medn - 3*lr_mad ,medn+(3*ur_mad ),
+CASE WHEN temp2.cnt BETWEEN (medn - (3*lr_mad)) AND (medn + (3*ur_mad)) THEN 'Not Outlier' ELSE 'Outlier' END reslt
+from temp2
+order by 2,1;
+
+
+
+--Modified Z-score on count of transaction for each day in a store
+
+with temp AS(SELECT distinct trans_dt, to_char(trans_dt, 'Dy') dy, store_id, , COUNT(trans_id) cnt
+FROM table1
+LEFT OUTER JOIN table2 ON store_id = store 
+WHERE trans_dt > Trunc(sysdate - 28)
+AND store_id BETWEEN 4550 AND 4600
+GROUP BY trans_dt, store_id, 
+)
+
+,temp2 AS(
+SELECT temp.*, median(temp.cnt) OVER (PARTITION BY store_id) medn,
+ABS(temp.cnt - median(temp.cnt) OVER (PARTITION BY store_id)) abs_deviatn,
+temp.cnt - median(temp.cnt) OVER (PARTITION BY store_id) deviatn
+from temp)
+
+select temp2.trans_dt, temp2.store_id, temp2., temp2.cnt, temp2.medn, temp2.deviatn, median(abs_deviatn) OVER (PARTITION BY store_id) mad, 
+round(0.6745*temp2.deviatn/(median(abs_deviatn) OVER (PARTITION BY store_id)), 3) reslt,
+--CASE WHEN median(deviatn) OVER (PARTITION BY store_id)<> 0 THEN
+ CASE WHEN round(0.6745*temp2.deviatn/(median(abs_deviatn) OVER (PARTITION BY store_id)), 2) NOT BETWEEN -3.5 AND 3.5 THEN 'Outlier' ELSE 'Not Outlier' END  reslt2
+from temp2
+order by 2,1;
+
+
+
+
+
+--Tukey Method to detect extreme outliers based on the transaction count
+
+With temp AS(SELECT  distinct trans_dt, store_id, , COUNT(trans_id) cnt
+FROM table1
+LEFT OUTER JOIN table2 ON store_id = store 
+WHERE trans_dt > Trunc(sysdate - 28)
+AND store_id BETWEEN 4550 AND 4600
+GROUP BY trans_dt, store_id, )
+
+, temp2 AS(Select temp.*, percentile_disc(0.25) within group (order by cnt)  over (partition by store_id) qrtile_25
+, percentile_disc(0.75) within group (order by cnt)  over (partition by store_id) qrtile_75,
+percentile_disc(0.75) within group (order by cnt)  over (partition by store_id)- percentile_disc(0.25) within group (order by cnt)  over (partition by store_id) iqr
+from temp)
+
+Select temp2.*, qrtile_25 -(3*iqr) lc, qrtile_75 +(3*iqr) uc,
+CASE WHEN cnt NOT BETWEEN qrtile_25 -(3*iqr) AND qrtile_75 +(3*iqr) THEN 'Outlier' else 'Not Outlier' END reslt
+from temp2
+order by 2,1;
+
+
+
+
+--Using Tukey's Method to detect anomaly on row count per day in a table
+
+With temp AS(SELECT  trans_dt, store_id, , COUNT(*) rw_cnt
+FROM table1
+LEFT OUTER JOIN table2 ON store_id = store   
+GROUP BY trans_dt, store_id, )
+
+, temp2 AS(Select temp.*, percentile_disc(0.25) within group (order by rw_cnt)  over (partition by store_id) qrtile_25
+, percentile_disc(0.75) within group (order by rw_cnt)  over (partition by store_id) qrtile_75,
+percentile_disc(0.75) within group (order by rw_cnt)  over (partition by store_id)- percentile_disc(0.25) within group (order by rw_cnt)  over (partition by store_id) iqr
+from temp)
+
+Select temp2.trans_dt, temp2.store_id, temp2.rw_cnt
+--,qrtile_25 -(3*iqr) lc, qrtile_75 +(3*iqr) uc, CASE WHEN rw_cnt NOT BETWEEN qrtile_25 -(3*iqr) AND qrtile_75 +(3*iqr) THEN 'Outlier' else 'Not Outlier' END reslt
+from temp2
+WHERE rw_cnt<qrtile_25 -(3*iqr) OR rw_cnt>qrtile_75 +(3*iqr)
+order by 2,1;
+
+
+
+
+
+
+
+
+
+
+
+
